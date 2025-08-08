@@ -140,6 +140,9 @@ andromeda <- function(..., options = list()) {
 #' @export
 copyAndromeda <- function(andromeda, options = list()) {
   checkIfValid(andromeda)
+  # Call flush (checkpoint) to avoid segfault:
+  Andromeda::flushAndromeda(andromeda)
+  
   newAndromeda <- .createAndromeda(options = options)
   Andromeda::flushAndromeda(andromeda)
   tables <- DBI::dbListTables(andromeda)
