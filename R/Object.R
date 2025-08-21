@@ -1,13 +1,13 @@
 # Copyright 2025 Observational Health Data Sciences and Informatics
 #
 # This file is part of Andromeda
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,32 +15,59 @@
 # limitations under the License.
 
 #' The Andromeda class
-#' 
-#' @description 
+#'
+#' @description
 #' The `Andromeda` class is an S4 object.
-#' 
-#' This class provides the ability to work with data objects in R that are too large to fit in memory. Instead, 
-#' these objects are stored on disk. This is slower than working from memory, but may be the only viable option. 
-#' 
+#'
+#' This class provides the ability to work with data objects in R that are too large to fit in memory. Instead,
+#' these objects are stored on disk. This is slower than working from memory, but may be the only viable option.
+#'
 #' @section Tables:
-#' An `Andromeda` object has zero, one or more tables. The list of table names can be retrieved using the [`names()`] 
-#' method. Tables can be accessed using the dollar sign syntax, e.g. `andromeda$myTable`, or double-square-bracket 
+#' An `Andromeda` object has zero, one or more tables. The list of table names can be retrieved using the [`names()`]
+#' method. Tables can be accessed using the dollar sign syntax, e.g. `andromeda$myTable`, or double-square-bracket
 #' syntax, e.g. `andromeda[["myTable"]]`
 #'
-#' 
+#'
 #' @section Permanence:
-#' 
-#' To mimic the behavior of in-memory objects, when working with data in `Andromeda` the data is stored in a 
-#' temporary location on the disk. You can modify the data as you can see fit, and when needed can save the data 
-#' to a permanent location. Later this data can be loaded to a temporary location again and be read and modified, 
+#'
+#' To mimic the behavior of in-memory objects, when working with data in `Andromeda` the data is stored in a
+#' temporary location on the disk. You can modify the data as you can see fit, and when needed can save the data
+#' to a permanent location. Later this data can be loaded to a temporary location again and be read and modified,
 #' while keeping the saved data as is.
-#' 
+#'
 #' @section Inheritance:
-#' 
-#' The `Andromeda` inherits directly from `duckdb_connection` As such, it can be used as if it is a `duckdb_connection`. 
-#' The `duckdb`package is an R wrapper around 'duckdb', a low-weight but powerful single-user SQL database that can run 
+#'
+#' The `Andromeda` inherits directly from `duckdb_connection` As such, it can be used as if it is a `duckdb_connection`.
+#' The `duckdb`package is an R wrapper around 'duckdb', a low-weight but powerful single-user SQL database that can run
 #' from a single file on the local file system.
-#' 
+#'
+log_andromeda_event <- function(obj_or_filename, event_message) {
+  try(
+    { # Use try to ensure logging never crashes the process
+      ts <- format(Sys.time(), "%Y-%-%d %H:%M:%OS6")
+      pid <- Sys.getpid()
+      obj_id <- "UNKNOWN_FILE"
+      conn_addr <- "UNKNOWN_CONN"
+
+      # Check if we were passed a valid Andromeda object
+      if (isAndromeda(obj_or_filename) && try(isValidAndromeda(obj_or_filename), silent = TRUE))      {
+          obj_id <- basename(obj_or_filename@dbname)
+          # Get the memory address of the R object itself
+          conn_addr <- lobstr::obj_addr(obj_or_filename)
+      } else if (is.character(obj_or_filename)) {
+        # This case handles the finalizer where the object may no longer be valid
+        obj_id <- basename(obj_or_filename)
+        conn_addr <- "NA_FINALIZED"
+      }
+
+      message(sprintf("[AndromedaDiag] [%s] [PID:%s] [OBJ:%s] [CONN:%s] %s", ts, pid, obj_id, conn_addr, event_message))
+    },
+    silent = TRUE
+  )
+}
+
+
+
 #' @name Andromeda-class
 #' @aliases Andromeda
 #' @seealso [`andromeda()`]
@@ -56,25 +83,25 @@ setClass("Andromeda", slots = c("dbname" = "character"), contains = "duckdb_conn
 #' By default the `Andromeda` object is created in the systems temporary file location. You can override
 #' this by specifying a folder using `options(andromedaTempFolder = "c:/andromedaTemp")`, where
 #' `"c:/andromedaTemp"` is the folder to create the Andromeda objects in.
-#' 
-#' Although in general Andromeda is well-behaved in terms of memory usage, it can consume a lot of 
-#' memory for specific operations such as sorting and aggregating. By default the memory usage is 
+#'
+#' Although in general Andromeda is well-behaved in terms of memory usage, it can consume a lot of
+#' memory for specific operations such as sorting and aggregating. By default the memory usage is
 #' limited to 75% of the physical memory. However it is possible to set another limit by using
-#' `options(andromedaMemoryLimit = 2.5)`, where `2.5` is the number of GB to use at most. One GB is 
+#' `options(andromedaMemoryLimit = 2.5)`, where `2.5` is the number of GB to use at most. One GB is
 #' 1,000,000,000 bytes.
-#' 
-#' Similarly, by default Andromeda will use all available CPU cores when needed. The `andromedaThreads` 
+#'
+#' Similarly, by default Andromeda will use all available CPU cores when needed. The `andromedaThreads`
 #' option controls the maximum number of threads Andromeda is allowed to use.
-#' 
+#'
 #' @param ...   Named objects. See details for what objects are valid. If no objects are provided, an
 #'              empty Andromeda is returned.
-#' @param options A named list of options. Currently the only supported option is 'threads' (see example). 
+#' @param options A named list of options. Currently the only supported option is 'threads' (see example).
 #'                All other options are ignored.
 #'
 #' @details
 #' Valid objects are data frames, `Andromeda` tables, or any other `dplyr` table.
-#' 
-#' @return 
+#'
+#' @return
 #' Returns an [`Andromeda`] object.
 #'
 #' @examples
@@ -83,27 +110,29 @@ setClass("Andromeda", slots = c("dbname" = "character"), contains = "duckdb_conn
 #' names(andr)
 #' # [1] 'cars' 'iris'
 #'
-#' andr$cars %>% filter(speed > 10) %>% collect()
-#' # # A tibble: 41 x 2 
-#' # speed dist 
-#' # <dbl> <dbl> 
-#' # 1 11 17 
+#' andr$cars %>%
+#'   filter(speed > 10) %>%
+#'   collect()
+#' # # A tibble: 41 x 2
+#' # speed dist
+#' # <dbl> <dbl>
+#' # 1 11 17
 #' # ...
 #'
 #' close(andr)
-#' 
+#'
 #' # Use multiple threads for queries
 #' andr <- andromeda(cars = cars, iris = iris, options = list(threads = 8))
-#' 
-#' 
+#'
 #' @rdname andromeda_constructor
 #'
 #' @export
 andromeda <- function(..., options = list()) {
   arguments <- list(...)
   if (length(arguments) > 0) {
-    if (is.null(names(arguments)) || any(names(arguments) == ""))
+    if (is.null(names(arguments)) || any(names(arguments) == "")) {
       abort("All arguments must be named")
+    }
   }
   andromeda <- .createAndromeda(options = options)
   if (length(arguments) > 0) {
@@ -142,28 +171,34 @@ copyAndromeda <- function(andromeda, options = list()) {
   checkIfValid(andromeda)
   # Call flush (checkpoint) to avoid segfault:
   Andromeda::flushAndromeda(andromeda)
-  
+
   newAndromeda <- .createAndromeda(options = options)
-  
+
   tables <- DBI::dbListTables(andromeda)
 
   if (.Platform$OS.type == "windows") {
     # On windows, avoid attaching to a locked database file
     for (table in tables) {
       tempFile <- tempfile(tmpdir = .getAndromedaTempFolder(), fileext = ".parquet")
-      DBI::dbExecute(andromeda, 
-        sprintf("COPY %s TO '%s' (FORMAT 'parquet')", table, tempFile))
+      DBI::dbExecute(
+        andromeda,
+        sprintf("COPY %s TO '%s' (FORMAT 'parquet')", table, tempFile)
+      )
 
-      DBI::dbExecute(newAndromeda, 
-        sprintf("CREATE TABLE %s AS SELECT * FROM read_parquet('%s')", table, tempFile))
+      DBI::dbExecute(
+        newAndromeda,
+        sprintf("CREATE TABLE %s AS SELECT * FROM read_parquet('%s')", table, tempFile)
+      )
     }
     unlink(tempFile)
   } else {
     oldFile <- andromeda@dbname
     DBI::dbExecute(newAndromeda, sprintf("ATTACH DATABASE '%s' AS old", oldFile))
     for (table in tables) {
-      DBI::dbExecute(newAndromeda, 
-        sprintf("CREATE TABLE %s AS SELECT * FROM old.%s", table, table))
+      DBI::dbExecute(
+        newAndromeda,
+        sprintf("CREATE TABLE %s AS SELECT * FROM old.%s", table, table)
+      )
     }
     DBI::dbExecute(newAndromeda, "DETACH DATABASE old")
   }
@@ -172,7 +207,7 @@ copyAndromeda <- function(andromeda, options = list()) {
     failed <- paste(dplyr::setdiff(names(andromeda), names(newAndromeda)), collapse = ", ")
     msg <- paste("Error copying Andromeda object.\n", succeeded, "copied successfully.\n", failed, "failed to copy.\n")
     rlang::abort(msg)
-  } 
+  }
   return(newAndromeda)
 }
 
@@ -182,14 +217,20 @@ copyAndromeda <- function(andromeda, options = list()) {
   class(andromeda) <- "Andromeda"
   attr(class(andromeda), "package") <- "Andromeda"
   andromeda@dbname <- andromeda@driver@dbdir
+  andromeda_filename_for_finalizer <- andromeda@driver@dbdir
+  andromeda_conn_addr_for_finalizer <- lobstr::obj_addr(andromeda)
   finalizer <- function(conn_ref) {
     # Suppress R Check note about unused argument:
     missing(conn_ref)
     # Use R's scoping rules to refer the andromeda object we want to close without explicitly passing it as an argument:
+    message(sprintf("[AndromedaDiag] ... [OBJ:%s] [CONN:%s] ...",
+                  basename(andromeda_filename_for_finalizer), 
+                  andromeda_conn_addr_for_finalizer))
     close(andromeda)
+    log_andromeda_event(andromeda_filename_for_finalizer, "FINALIZER COMPLETED")
   }
   reg.finalizer(andromeda@conn_ref, finalizer, onexit = TRUE)
-  
+
   # ignore all options except 'threads' for now
   if (is.numeric(options[["threads"]])) {
     DBI::dbExecute(andromeda, paste("PRAGMA threads = ", as.integer(options[["threads"]])))
@@ -203,6 +244,7 @@ copyAndromeda <- function(andromeda, options = list()) {
   if (!is.null(memoryLimit)) {
     DBI::dbExecute(andromeda, sprintf("SET memory_limit = '%0.4fGB';", memoryLimit))
   }
+  log_andromeda_event(andromeda, "CONNECTION CREATED")
   return(andromeda)
 }
 
@@ -231,11 +273,13 @@ setMethod("show", "Andromeda", function(object) {
     cli::cat_line("")
     cli::cat_line("Tables:")
     for (name in duckdb::dbListTables(object)) {
-      cli::cat_line(paste0("$",
-                           name,
-                           " (",
-                           paste(duckdb::dbListFields(object, name), collapse = ", "),
-                           ")"))
+      cli::cat_line(paste0(
+        "$",
+        name,
+        " (",
+        paste(duckdb::dbListFields(object, name), collapse = ", "),
+        ")"
+      ))
     }
   } else {
     cli::cli_alert_danger("Connection closed")
@@ -250,7 +294,6 @@ setMethod("show", "Andromeda", function(object) {
 #' Andromeda-class
 setMethod("$", "Andromeda", function(x, name) {
   return(x[[name]])
-
 })
 
 #' @param x     An [`Andromeda`] object.
@@ -270,7 +313,7 @@ setMethod("$<-", "Andromeda", function(x, name, value) {
 #' @export
 #' @rdname
 #' Andromeda-class
-setMethod("[[<-", "Andromeda", function(x, i, value) { 
+setMethod("[[<-", "Andromeda", function(x, i, value) {
   checkIfValid(x)
   if (is.null(value)) {
     if (i %in% names(x)) {
@@ -292,7 +335,7 @@ setMethod("[[<-", "Andromeda", function(x, i, value) {
         tempName <- paste(sample(letters, 16), collapse = "")
         sql <- sprintf("CREATE TABLE %s AS %s", tempName, sql)
         DBI::dbExecute(x, sql)
-        duckdb::dbRemoveTable(x, i) 
+        duckdb::dbRemoveTable(x, i)
         sql <- sprintf("ALTER TABLE %s RENAME TO %s;", tempName, i)
         DBI::dbExecute(x, sql)
       } else {
@@ -300,7 +343,7 @@ setMethod("[[<-", "Andromeda", function(x, i, value) {
         DBI::dbExecute(x, sql)
       }
     } else {
-      # value is not in the same database as x[[i]] 
+      # value is not in the same database as x[[i]]
       if (duckdb::dbExistsTable(x, i)) {
         duckdb::dbRemoveTable(x, i)
       }
@@ -309,8 +352,10 @@ setMethod("[[<-", "Andromeda", function(x, i, value) {
       if (is.null(sourceTableName) || .Platform$OS.type == "windows") {
         # value is a lazy_query or windows which has strong file locks and can't attach
         # compute first to a temp parquet file
-        tempFile <- tempfile(tmpdir = .getAndromedaTempFolder(),
-                             fileext = ".parquet")
+        tempFile <- tempfile(
+          tmpdir = .getAndromedaTempFolder(),
+          fileext = ".parquet"
+        )
         DBI::dbExecute(
           dbplyr::remote_con(value),
           sprintf(
@@ -329,13 +374,13 @@ setMethod("[[<-", "Andromeda", function(x, i, value) {
         )
         unlink(tempFile)
       } else {
-          DBI::dbExecute(x, sprintf("ATTACH '%s' as source", valueSourceFile))
-          DBI::dbExecute(x, sprintf(
-            "CREATE OR REPLACE TABLE
+        DBI::dbExecute(x, sprintf("ATTACH '%s' as source", valueSourceFile))
+        DBI::dbExecute(x, sprintf(
+          "CREATE OR REPLACE TABLE
             %s AS SELECT * FROM source.%s", i,
-            sourceTableName
-          ))
-          DBI::dbExecute(x, "DETACH source")
+          sourceTableName
+        ))
+        DBI::dbExecute(x, "DETACH source")
       }
     }
   } else {
@@ -364,8 +409,8 @@ setMethod("[[", "Andromeda", function(x, i) {
 #' Show the names of the tables in an Andromeda object.
 #'
 #' @param x    An [`Andromeda`] object.
-#' 
-#' @return 
+#'
+#' @return
 #' A vector of names.
 #'
 #' @examples
@@ -378,7 +423,7 @@ setMethod("[[", "Andromeda", function(x, i) {
 #'
 #' @rdname
 #' Andromeda-class
-#' 
+#'
 #' @export
 setMethod("names", "Andromeda", function(x) {
   checkIfValid(x)
@@ -386,11 +431,11 @@ setMethod("names", "Andromeda", function(x) {
 })
 
 #' Set table names in an Andromeda object
-#' 
+#'
 #' names(andromedaObject) must be set to a character vector with length equal to the number of
-#' tables in the andromeda object (i.e. length(andromedaObject)). The user is 
+#' tables in the andromeda object (i.e. length(andromedaObject)). The user is
 #' responsible for setting valid table names (e.g. not using SQL keywords or numbers as names)
-#' This function treats Andromeda table names as case insensitive so if the only difference 
+#' This function treats Andromeda table names as case insensitive so if the only difference
 #' between the new names and old names is the case then the names will not be changed.
 #'
 #' @param x An Andromeda object
@@ -404,24 +449,24 @@ setMethod("names", "Andromeda", function(x) {
 #' names(andr)
 #' # [1] "CARS" "IRIS"
 #' close(andr)
-#' 
+#'
 setMethod("names<-", "Andromeda", function(x, value) {
   checkIfValid(x)
   nm <- names(x)
-  if(!is.character(value) || !(length(nm) == length(value))) {
+  if (!is.character(value) || !(length(nm) == length(value))) {
     rlang::abort("New names must be a character vector with the same length as names(x).")
   }
-  
-  for(i in seq_along(nm)) {
-    if((nm[i] != value[i]) & (tolower(nm[i]) == tolower(value[i]))) {
+
+  for (i in seq_along(nm)) {
+    if ((nm[i] != value[i]) & (tolower(nm[i]) == tolower(value[i]))) {
       # Handle case when names differ only by case
       DBI::dbExecute(x, sprintf("ALTER TABLE %s RENAME TO %s;", nm[i], paste0(nm[i], "0")))
       DBI::dbExecute(x, sprintf("ALTER TABLE %s RENAME TO %s;", paste0(nm[i], "0"), value[i]))
-    } else if(nm[i] != value[i]) {
+    } else if (nm[i] != value[i]) {
       DBI::dbExecute(x, sprintf("ALTER TABLE %s RENAME TO %s;", nm[i], value[i]))
     }
   }
-  
+
   invisible(x)
 })
 
@@ -453,16 +498,16 @@ names.tbl_Andromeda <- function(x) {
 #' andr <- andromeda(cars = cars)
 #' names(andr$cars) <- toupper(names(andr$cars))
 #' names(andr$cars)
-#' # [1] "SPEED" "DIST" 
+#' # [1] "SPEED" "DIST"
 #' close(andr)
 "names<-.tbl_Andromeda" <- function(x, value) {
   tableName <- dbplyr::remote_name(x)
   connection <- dbplyr::remote_con(x)
   nm <- names(x)
-  if(!is.character(value) || !(length(nm) == length(value))) {
+  if (!is.character(value) || !(length(nm) == length(value))) {
     rlang::abort("New names must be a character vector with the same length as names(x).")
   }
-  
+
   idx <- nm != value
   if (any(idx)) {
     sql <- sprintf("ALTER TABLE %s RENAME COLUMN %s TO %s;", tableName, nm[idx], value[idx])
@@ -531,6 +576,7 @@ isValidAndromeda <- function(x) {
 #' Andromeda-class
 setMethod("close", "Andromeda", function(con, ...) {
   fileName <- con@driver@dbdir
+  log_andromeda_event(con, "CLOSE METHOD CALLED")
   if (duckdb::dbIsValid(con)) {
     duckdb::dbDisconnect(con, shutdown = TRUE)
   }
@@ -548,6 +594,20 @@ checkIfValid <- function(x) {
 #' Is the object an Andromeda table?
 #'
 #' @param tbl A reference to an Andromeda table
+#'
+#' @return TRUE or FALSE
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' andr <- andromeda(cars = cars)
+#' isAndromedaTable(andr$cars)
+#' close(andr)
+#' }
+#' @export
+isAndromedaTable <- function(tbl) {
+  return(inherits(tbl, "tbl_dbi") && inherits(dbplyr::remote_con(tbl), "Andromeda"))
+}
 #'
 #' @return TRUE or FALSE
 #' @export

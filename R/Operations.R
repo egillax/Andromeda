@@ -59,7 +59,11 @@ batchApply <- function(tbl, fun, ..., batchSize = 100000, progressBar = FALSE, s
     abort("First argument must be an Andromeda (or DBI) table")
   if (!is.function(fun))
     abort("Second argument must be a function")
-  
+  andromeda_connection <- try(dbplyr::remote_con(tbl), silent = TRUE)
+  log_andromeda_event(andromeda_connection, "BATCH APPLY: STARTING")
+  on.exit({
+      log_andromeda_event(andromeda_connection, "BATCH APPLY: FINISHED")
+  }, add = TRUE) 
   if (safe) {
     tempAndromeda <- andromeda()
     on.exit(close(tempAndromeda))
@@ -143,7 +147,11 @@ batchApply <- function(tbl, fun, ..., batchSize = 100000, progressBar = FALSE, s
 groupApply <- function(tbl, groupVariable, fun, ..., batchSize = 100000, progressBar = FALSE, safe = FALSE) {
   if (!groupVariable %in% colnames(tbl))
     abort(sprintf("'%s' is not a variable in the table", groupVariable))
-  
+  andromeda_connection <- try(dbplyr::remote_con(tbl), silent = TRUE)
+  log_andromeda_event(andromeda_connection, "GROUP APPLY: STARTING")
+  on.exit({
+      log_andromeda_event(andromeda_connection, "GROUP APPLY: FINISHED")
+  }, add = TRUE)
   env <- new.env()
   assign("output", list(), envir = env)
   wrapper <- function(data, userFun, groupVariable, env, ...) {
