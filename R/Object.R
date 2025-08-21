@@ -41,7 +41,7 @@
 #' The `duckdb`package is an R wrapper around 'duckdb', a low-weight but powerful single-user SQL database that can run
 #' from a single file on the local file system.
 #'
-log_andromeda_event <- function(obj_or_filename, event_message) {
+log_andromeda_event <- function(obj_or_filename, context, event_message) {
   try(
     { # Use try to ensure logging never crashes the process
       ts <- format(Sys.time(), "%Y-%-%d %H:%M:%OS6")
@@ -60,7 +60,7 @@ log_andromeda_event <- function(obj_or_filename, event_message) {
         conn_addr <- "NA_FINALIZED"
       }
 
-      message(sprintf("[AndromedaDiag] [%s] [PID:%s] [OBJ:%s] [CONN:%s] %s", ts, pid, obj_id, conn_addr, event_message))
+      message(sprintf("[AndromedaDiag] [%s] [PID:%s] [OBJ:%s] [CONN:%s] [%s] %s", ts, pid, obj_id, conn_addr, context, event_message))
     },
     silent = TRUE
   )
@@ -168,12 +168,18 @@ andromeda <- function(..., options = list()) {
 #'
 #' @export
 copyAndromeda <- function(andromeda, options = list()) {
+  log_andromeda_event(andromeda, "COPY", "STARTING COPY of this object.")
+  on.exit({
+    log_andromeda_event(andromeda, "COPY", "FINISHED COPY of this object.")
+  }, add = TRUE)
   checkIfValid(andromeda)
+
+
   # Call flush (checkpoint) to avoid segfault:
   Andromeda::flushAndromeda(andromeda)
 
   newAndromeda <- .createAndromeda(options = options)
-
+  log_andromeda_event(newAndromeda, "COPY", paste("CREATED as target for source connection", lobstr::obj_addr(andromeda)))
   tables <- DBI::dbListTables(andromeda)
 
   if (.Platform$OS.type == "windows") {
@@ -223,11 +229,11 @@ copyAndromeda <- function(andromeda, options = list()) {
     # Suppress R Check note about unused argument:
     missing(conn_ref)
     # Use R's scoping rules to refer the andromeda object we want to close without explicitly passing it as an argument:
-    message(sprintf("[AndromedaDiag] ... [OBJ:%s] [CONN:%s] ...",
-                  basename(andromeda_filename_for_finalizer), 
+    ts <- format(Sys.time(), "%Y-%m-%d %H:%M:%OS6")
+    pid <- Sys.getpid()
+    message(sprintf("[AndromedaDiag] [%s] [PID:%s] [OBJ:%s] [CONN:%s] [FINALIZER] Garbage collector triggered", ts, pid, basename(andromeda_filename_for_finalizer), 
                   andromeda_conn_addr_for_finalizer))
     close(andromeda)
-    log_andromeda_event(andromeda_filename_for_finalizer, "FINALIZER COMPLETED")
   }
   reg.finalizer(andromeda@conn_ref, finalizer, onexit = TRUE)
 
@@ -244,7 +250,7 @@ copyAndromeda <- function(andromeda, options = list()) {
   if (!is.null(memoryLimit)) {
     DBI::dbExecute(andromeda, sprintf("SET memory_limit = '%0.4fGB';", memoryLimit))
   }
-  log_andromeda_event(andromeda, "CONNECTION CREATED")
+  log_andromeda_event(andromeda, "CREATE", "Connection object created successfully")
   return(andromeda)
 }
 
@@ -315,6 +321,10 @@ setMethod("$<-", "Andromeda", function(x, name, value) {
 #' Andromeda-class
 setMethod("[[<-", "Andromeda", function(x, i, value) {
   checkIfValid(x)
+  log_andromeda_event(x, "ASSIGN", paste0("STARTING assignment to table '", i, "'."))
+  on.exit({
+    log_andromeda_event(x, "ASSIGN", paste0("FINISHED assignment to table '", i, "'."))
+  }, add = TRUE)
   if (is.null(value)) {
     if (i %in% names(x)) {
       duckdb::dbRemoveTable(x, i)
